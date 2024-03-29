@@ -1,0 +1,141 @@
+Description: 'CloudFormation template para criar uma VPC simples com 2 subnets (1 publica e 1 privada), internet gateway, route table, NAT gateway e elastic IP'
+
+Parameters:
+  VPCCidrBlock:
+    Type: String
+    Default: 10.0.0.0/16
+    Description: Cidr range da VPC
+
+  PublicSubnetCidrBlock:
+    Type: String
+    Default: 10.0.1.0/24
+    Description: Cidr para a subnet publica
+
+  PrivateSubnetCidrBlock:
+    Type: String
+    Default: 10.0.2.0/24
+    Description: Cidr para a subnet privada
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      -
+        Label:
+          default: "VPC network configuration"
+        Parameters:
+          - VPCCidrBlock
+          - PublicSubnetCidrBlock
+          - PrivateSubnetCidrBlock
+
+Resources:
+
+  NewVPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: !Ref VPCCidrBlock
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      Tags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName}-VPC
+
+# Internet Gateway
+  NewInternetGateway:
+    Type: AWS::EC2::InternetGateway
+    DependsOn: NewVPC
+
+## Conectar o IGW com a VPC
+  AttachGateway:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref NewVPC
+      InternetGatewayId: !Ref NewInternetGateway
+
+# Subnets
+## Public Subnet
+  Subnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      CidrBlock: !Ref PublicSubnetCidrBlock
+      VpcId: !Ref NewVPC
+      AvailabilityZone: !Select [0, !GetAZs '' ]
+      Tags:
+      - Key: Name
+        Value: !Sub ${AWS::StackName}-PublicSubnet
+
+## Private Subnet
+  Subnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      CidrBlock: !Ref PrivateSubnetCidrBlock
+      VpcId: !Ref NewVPC
+      AvailabilityZone: !Select [0, !GetAZs '' ]
+      Tags:
+       - Key: Name
+         Value: !Sub ${AWS::StackName}-PrivateSubnet
+
+### Elastic IP
+  NewElasticIP:
+    Type: AWS::EC2::EIP
+    DependsOn: AttachGateway
+    Properties:
+      Domain: NewVPC
+      
+# NAT Gateway
+  NewNATGateway:
+    Type: AWS::EC2::NatGateway
+    Properties:
+      AllocationId: !GetAtt NewElasticIP.AllocationId
+      SubnetId: !Ref Subnet1
+      Tags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName}-NAT
+
+# Public Route table
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref NewVPC
+      Tags:
+        - Key: Name
+          Value: PublicRoute
+
+## Conectar a route publica com o Internet GW
+  PublicRoute1:
+    Type: AWS::EC2::Route
+    DependsOn: NewInternetGateway #AttachGateway 
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref NewInternetGateway
+
+# Private route table
+  PrivateRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref NewVPC
+      Tags:
+        - Key: Name
+          Value: PrivateRoute
+
+## Conectar no NAT GW
+  PrivateRoute1:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref NewNATGateway
+
+### Associar a tabela de rotas publica
+  PublicRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      SubnetId: !Ref Subnet1
+
+### Associar a tabela de rotas privada
+  PrivateRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable
+      SubnetId: !Ref Subnet2
