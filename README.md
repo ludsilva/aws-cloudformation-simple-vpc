@@ -18,4 +18,4 @@ Este projeto apresenta um template simples para criar uma VPC no CloudFormation 
 
 ### Exemplo da arquitetura
 
-![imagem de exemplo]()
+![imagem de exemplo](https://github.com/ludsilva/aws-cloudformation-simple-vpc/blob/8987aa22ade409b6352545324d384cec4353a697/img/vpc-v1.png)
